@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GradeSort | Grade Sorter, Study Helper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="//www.gstatic.com">
+  <link rel="preconnect" href="https://chatappv3-fea49-default-rtdb.firebaseio.com" crossorigin>
+  <link rel="dns-prefetch" href="//chatappv3-fea49-default-rtdb.firebaseio.com">
+  <!-- Fast first paint: load Inter immediately, defer the rest without removing them -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Bebas+Neue&family=Pacifico&family=DM+Sans:wght@400;700&family=Work+Sans:wght@400;700&family=Rubik:wght@400;700&family=Manrope:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Source+Sans+3:wght@400;700&family=Roboto+Slab:wght@400;700&family=Source+Code+Pro:wght@400;700&family=Fira+Code:wght@400;700&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Poppins:wght@400;600;700&family=Nunito:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Bebas+Neue&family=Pacifico&family=DM+Sans:wght@400;700&family=Work+Sans:wght@400;700&family=Rubik:wght@400;700&family=Manrope:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Source+Sans+3:wght@400;700&family=Roboto+Slab:wght@400;700&family=Source+Code+Pro:wght@400;700&family=Fira+Code:wght@400;700&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+  </noscript>
+  <script>
+    (function(){
+      try{
+        document.documentElement.dataset.theme = "dark";
+        localStorage.setItem("chatapp_theme","dark");
+      }catch(e){}
+    })();
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/dowsy456/christianlumen727@main/styles.css" />
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  "use strict";
+
+  // ======= SETTINGS =======
+  const WINDOW_MS = 500;   // up to 0.5s between keys in a sequence
+  const DEBOUNCE_MS = 120;
+
+  // Blackout (Cloak hotkey; configurable)
+  const BLACK_ID = "__shift_z_blackout__";
+  const CLOAK_LS_KEY = "chatapp_cloak_keys";
+  const CLOAK_DEFAULT = ["Shift", "Z"];
+
+  const STYLE_ID = "__hotkey_overlays_style__";
+
+  // ======= STATE =======
+  let lastToggle = 0;
+
+  let cloakKeysRaw = null;
+  let cloakKeys = [...CLOAK_DEFAULT];
+  let cloakIdx = 0, cloakLast = 0;
+
+  const nowMs = () =>
+    (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
+  // ----- Cloak keybind storage -----
+  function normalizeKeyName(raw){
+    let k = String(raw || "");
+    if (!k) return null;
+    if (k === " ") k = "Space";
+    if (k === "Esc") k = "Escape";
+    if (k.length === 1) k = k.toUpperCase();
+    return k;
+  }
+
+  function parseCloakKeys(raw){
+    if (!raw) return null;
+    try{
+      const v = JSON.parse(raw);
+      if (Array.isArray(v) && v.length && v.length <= 4) return v.map(normalizeKeyName).filter(Boolean);
+    }catch{}
+    const parts = String(raw).split("+").map((s) => s.trim()).filter(Boolean).map(normalizeKeyName).filter(Boolean);
+    if (parts.length && parts.length <= 4) return parts;
+    return null;
+  }
+
+  function refreshCloakKeys(){
+    const raw = localStorage.getItem(CLOAK_LS_KEY);
+    if (raw === cloakKeysRaw) return;
+    cloakKeysRaw = raw;
+    cloakKeys = parseCloakKeys(raw) || [...CLOAK_DEFAULT];
+    cloakIdx = 0;
+    cloakLast = 0;
+  }
+
+  // ======= SELECTION CHECK =======
+  function inputOrTextareaHasSelection() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = (el.tagName || "").toUpperCase();
+    if (tag !== "INPUT" && tag !== "TEXTAREA") return false;
+    if (tag === "INPUT") {
+      const type = (el.getAttribute("type") || "text").toLowerCase();
+      if (!/^(text|search|url|tel|email|password|number)$/i.test(type)) return false;
+    }
+    try {
+      return typeof el.selectionStart === "number" && typeof el.selectionEnd === "number" && el.selectionEnd > el.selectionStart;
+    } catch { return false; }
+  }
+  function pageHasSelection() {
+    if (inputOrTextareaHasSelection()) return true;
+    const sel = window.getSelection ? window.getSelection() : null;
+    return !!(sel && !sel.isCollapsed);
+  }
+
+  // ======= STYLE + OVERLAYS =======
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      /* Shift+Z blackout */
+      #${BLACK_ID}{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;background:#000!important;z-index:2147483647!important;margin:0!important;padding:0!important;border:0!important;display:none!important;pointer-events:none!important;}
+      #${BLACK_ID}.on{display:block!important;pointer-events:auto!important;}
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function ensureBlackout() {
+    ensureStyle();
+    let el = document.getElementById(BLACK_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = BLACK_ID;
+      el.setAttribute("aria-hidden", "true");
+      (document.documentElement || document.body).appendChild(el);
+      el.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
+      el.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+    }
+    return el;
+  }
+
+  function toggleBlackout(e) {
+    const t = nowMs();
+    if (t - lastToggle < DEBOUNCE_MS) return;
+
+    const el = ensureBlackout();
+    const currentlyOn = el.classList.contains("on");
+
+    // only require "nothing selected" to turn ON; turning OFF always works
+    if (!currentlyOn && pageHasSelection()) return;
+
+    lastToggle = t;
+    if (el.parentNode) el.parentNode.appendChild(el);
+    el.classList.toggle("on");
+
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const t = nowMs();
+    if (e.repeat) return;
+
+    refreshCloakKeys();
+
+    const k = normalizeKeyName(e.key);
+    if (!k) return;
+
+    // reset sequence if too slow
+    if (t - cloakLast > WINDOW_MS) {
+      cloakIdx = 0;
+      cloakLast = 0;
+    }
+
+    if (k === cloakKeys[cloakIdx]) {
+      cloakIdx += 1;
+      cloakLast = t;
+
+      if (cloakIdx >= cloakKeys.length) {
+        cloakIdx = 0;
+        cloakLast = 0;
+        toggleBlackout(e);
+      }
+      return;
+    }
+
+    // restart if key matches the first key in the sequence
+    if (k === cloakKeys[0]) {
+      cloakIdx = 1;
+      cloakLast = t;
+      return;
+    }
+
+    cloakIdx = 0;
+    cloakLast = 0;
+  }, true);
+})();
+</script>
+  <div class="bg-glow"></div>
+  <div class="edu-decor" aria-hidden="true">
+    <div class="edu-grid"></div>
+    <div class="edu-float edu-float-1">✏️</div>
+    <div class="edu-float edu-float-2">📚</div>
+    <div class="edu-float edu-float-3">🧮</div>
+    <div class="edu-float edu-float-4">📌</div>
+  </div>
+
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-dot"></div>
+        <div class="brand-text">
+          <div class="brand-title">GradeSort</div>
+          <div class="brand-subtitle">Grade sorter &amp; study helper</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="card">
+      <!-- HOME (logged out) -->
+      <div class="view" id="view-home" data-active="true">
+        <h1 class="h1">GradeSort Study Hub</h1>
+        <p class="muted">A <b>grade sorter</b> &amp; <b>grade helper</b> that organizes assignments, highlights what matters, and keeps your targets on track.</p>
+
+        <div class="edu-hero">
+          <div class="edu-kpis" aria-label="Example grade insights">
+            <div class="edu-kpi">
+              <div class="edu-kpi-label">Current Average</div>
+              <div class="edu-kpi-val">92%</div>
+              <div class="edu-kpi-sub">Example dashboard</div>
+            </div>
+            <div class="edu-kpi">
+              <div class="edu-kpi-label">Assignments Due</div>
+              <div class="edu-kpi-val">3</div>
+              <div class="edu-kpi-sub">Next 7 days, example</div>
+            </div>
+            <div class="edu-kpi">
+              <div class="edu-kpi-label">Target Grade</div>
+              <div class="edu-kpi-val">A</div>
+              <div class="edu-kpi-sub">Goal tracker</div>
+            </div>
+          </div>
+
+          <div class="edu-sorter" aria-label="Quick Grade Sorter preview">
+            <div class="edu-sorter-head">
+              <div class="edu-sorter-title">Quick Grade Sorter</div>
+              <span class="edu-badge">Preview</span>
+            </div>
+
+            <div class="edu-sorter-row">
+              <span class="edu-sorter-name">Homework</span>
+              <div class="edu-bar"><i style="--w:78%"></i></div>
+              <span class="edu-sorter-val">78%</span>
+            </div>
+            <div class="edu-sorter-row">
+              <span class="edu-sorter-name">Quizzes</span>
+              <div class="edu-bar"><i style="--w:91%"></i></div>
+              <span class="edu-sorter-val">91%</span>
+            </div>
+            <div class="edu-sorter-row">
+              <span class="edu-sorter-name">Tests</span>
+              <div class="edu-bar"><i style="--w:88%"></i></div>
+              <span class="edu-sorter-val">88%</span>
+            </div>
+
+            <div class="muted small edu-sorter-note">Note: Your real classes load after you sign in.</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn primary" id="btn-go-create">Create Study Workspace</button>
+          <button class="btn" id="btn-go-login">Enter Workspace Code</button>
+        </div>
+
+        <div class="footnote">
+          <span class="pill">Built for students</span>
+          <span class="pill">Grade sorter + grade helper</span>
+          <span class="pill">Account-code login</span>
+        </div>
+      </div>
+
+      <!-- CREATE -->
+      <div class="view" id="view-create" data-active="false">
+        <div class="view-head">
+          <button class="icon-btn" id="btn-back-from-create" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+              <path d="M14.5 6.5 9 12l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div>
+            <div class="h2">Create Study Workspace</div>
+            <div class="muted small">Choose a display name (max 20)</div>
+          </div>
+        </div>
+
+        <div class="form">
+          <label class="label">Display Name</label>
+          <input class="input" id="create-username" maxlength="20" autocomplete="off" placeholder="Your display name" />
+
+          <div class="row split">
+            <div>
+              <label class="label">Classroom Avatar</label>
+              <div class="upload" style="margin-top:8px">
+                <input id="create-pfp" type="file" accept="image/png,image/jpeg,image/jpg,image/gif" hidden />
+                <div class="upload-ui">
+                  <div class="upload-left">
+                    <div class="avatar-wrap">
+                      <div class="avatar-ring">
+                        <div class="avatar-clip" id="pfp-clip">
+                          <img id="pfp-img" alt="Profile Picture" draggable="false" />
+                        </div>
+                      </div>
+                    </div>
+                    <div class="upload-text">
+                      <div class="strong">Upload an Avatar (PNG / JPG / GIF)</div>
+                      <div class="muted small">Skip it to use a clean classroom icon.</div>
+                    </div>
+                  </div>
+
+                  <div class="upload-actions-stack">
+                    <div class="upload-actions-row">
+                      <button class="btn tiny" id="btn-create-choose-pfp" type="button">Choose</button>
+                      <button class="btn tiny" id="btn-create-use-default" type="button">Use Default</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="crop-controls" id="crop-controls" hidden>
+                <div class="row">
+                  <div class="muted small">Drag your avatar inside the badge.</div>
+                </div>
+                <div class="row">
+                  <label class="label small" for="zoom">Zoom</label>
+                  <input id="zoom" type="range" min="1.0" max="3.0" step="0.01" value="1.0" />
+                </div>
+                <div class="row">
+                  <button class="btn tiny" id="btn-center" type="button">Center</button>
+                  <button class="btn tiny" id="btn-reset" type="button">Reset</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="error" id="create-error" hidden></div>
+
+          <div class="btn-row">
+            <button class="btn primary" id="btn-create-account">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGIN -->
+      <div class="view" id="view-login" data-active="false">
+        <div class="view-head">
+          <button class="icon-btn" id="btn-back-from-login" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+              <path d="M14.5 6.5 9 12l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div>
+            <div class="h2">Open Your Dashboard</div>
+            <div class="muted small">Enter your workspace code to load your classes.</div>
+          </div>
+        </div>
+
+        <div class="form">
+          <label class="label">Workspace Code</label>
+          <div class="input-wrap">
+            <input class="input" id="login-code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Your workspace code" />
+            <button class="icon-btn eye" id="btn-toggle-eye" type="button" aria-label="Show / hide">
+              <span id="eye-icon"></span>
+            </button>
+          </div>
+
+          <div class="error" id="login-error" hidden></div>
+
+          <div class="btn-row">
+            <button class="btn primary" id="btn-login">Open Dashboard</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT (logged in) -->
+      <div class="view" id="view-chat" data-active="false">
+        <div class="chat-shell">
+          <section class="chat-main">
+            <div class="chat-top" id="chat-top">
+              <div class="room-info">
+                <div class="room-title" id="room-title">Home</div>
+                <div class="room-sub" id="room-sub">Welcome back</div>
+              </div>
+            </div>
+
+            <div class="missed-banner" id="missed-banner" hidden>
+              <div class="missed-banner-main">
+                <div class="missed-banner-title" id="missed-banner-title">Unread messages</div>
+                <div class="missed-banner-sub" id="missed-banner-sub">New messages are waiting</div>
+              </div>
+              <div class="missed-banner-actions">
+                <button class="btn tiny" id="missed-banner-jump" type="button">View first new message</button>
+                <button class="reply-bar-close" id="missed-banner-close" type="button" aria-label="Close">✕</button>
+              </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="messages bg-host" id="messages">
+              <div class="messages-inner" id="messages-inner"></div>
+            </div>
+
+            <!-- Overlays (Reply + Ping + Files) -->
+            <div class="chat-overlays" id="chat-overlays" aria-hidden="true">
+              <!-- Replying -->
+              <div class="reply-bar overlay-box reply-panel" id="reply-bar" hidden>
+                <div class="overlay-box-accent" aria-hidden="true"></div>
+                <div class="reply-card-main">
+                  <div class="overlay-box-kicker">Replying to</div>
+                  <div class="reply-target-row">
+                    <div class="mini-avatar reply-target-avatar" id="reply-bar-avatar" aria-hidden="true"></div>
+                    <div class="reply-target-copy">
+                      <div class="reply-target-name" id="reply-bar-text"></div>
+                      <div class="reply-target-message" id="reply-bar-message">Original message will appear here.</div>
+                    </div>
+                  </div>
+                </div>
+                <button class="reply-bar-close overlay-close" id="reply-bar-close" type="button" aria-label="Cancel reply">✕</button>
+              </div>
+              
+              <!-- Pinging -->
+              <div class="files-bar ping-bar overlay-box" id="ping-bar" hidden>
+                <div class="files-bar-head overlay-box-head">
+                  <div>
+                    <div class="overlay-box-kicker">Pinging</div>
+                    <div class="files-bar-title">Room Members</div>
+                  </div>
+                  <div class="overlay-head-actions">
+                    <div class="overlay-status-pill" id="ping-bar-query">Type @ to filter</div>
+                    <div class="overlay-status-pill" id="ping-bar-count">0 matches</div>
+                    <button class="reply-bar-close overlay-close" id="ping-bar-close" type="button" aria-label="Close ping box">✕</button>
+                  </div>
+                </div>
+                <div class="files-list ping-list" id="ping-list"></div>
+              </div>
+
+              <!-- Files -->
+              <div class="files-bar overlay-box attachment-panel" id="files-bar" hidden>
+                <div class="files-bar-head overlay-box-head">
+                  <div>
+                    <div class="overlay-box-kicker">Attachments</div>
+                  </div>
+                  <div class="overlay-head-actions">
+                    <div class="overlay-status-pill" id="files-bar-count">0 selected</div>
+                    <div class="overlay-status-pill" id="files-bar-limit">Max 3 files · 3 voice · 2 GIFs</div>
+                    <button class="reply-bar-close overlay-close" id="files-bar-close" type="button" aria-label="Clear files">✕</button>
+                  </div>
+                </div>
+                <div class="files-list attachment-list" id="files-list"></div>
+              </div>
+            </div>
+
+            <div class="typing-bar" id="typing-bar" hidden aria-live="polite">
+              <div class="typing-bar-text">
+                <span class="typing-bar-users" id="typing-bar-users"></span>
+                <span class="typing-bar-suffix" aria-hidden="true"><span class="typing-bar-dot">.</span><span class="typing-bar-dot">.</span><span class="typing-bar-dot">.</span></span>
+              </div>
+            </div>
+
+            <!-- Composer -->
+            <div class="composer" id="composer">
+              <div class="slideshow-composer-top" id="slideshow-composer-top" hidden>
+                <div class="slideshow-composer-group">
+                  <button class="btn tiny" id="btn-slide-copy" type="button">Copy</button>
+                  <button class="btn tiny" id="btn-slide-paste" type="button">Paste</button>
+                  <button class="btn tiny" id="btn-slide-copy-paste" type="button">Copy + Paste</button>
+                  <button class="btn tiny" id="btn-slide-duplicate" type="button">Duplicate</button>
+                </div>
+                <div class="slideshow-composer-group">
+                  <button class="btn tiny" id="btn-slide-text" type="button">Text Box</button>
+                  <button class="btn tiny" id="btn-slide-shape" type="button">Shape</button>
+                  <button class="btn tiny" id="btn-slide-bg" type="button">Background</button>
+                </div>
+                <div class="slideshow-composer-group">
+                  <button class="btn tiny" id="btn-slide-center-x" type="button">Center X</button>
+                  <button class="btn tiny" id="btn-slide-center-y" type="button">Center Y</button>
+                  <button class="btn tiny" id="btn-slide-center-both" type="button">Center Both</button>
+                </div>
+                <div class="slideshow-composer-group">
+                  <button class="btn tiny" id="btn-slide-forward" type="button">Forward</button>
+                  <button class="btn tiny" id="btn-slide-backward" type="button">Backward</button>
+                  <button class="btn tiny" id="btn-slide-front" type="button">Front</button>
+                  <button class="btn tiny" id="btn-slide-back" type="button">Back</button>
+                  <button class="btn tiny danger" id="btn-slide-delete-object" type="button">Delete Object</button>
+                </div>
+              </div>
+
+              <div class="composer-row" id="composer-row">
+                <div class="composer-actions composer-actions--left">
+                  <button class="icon-btn" id="btn-upload" type="button" title="Upload file">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                      <path d="M21 15v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M7 10 12 5l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M12 5v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <textarea class="composer-input" id="msg-input" placeholder="Type a message…" maxlength="200000" rows="1"></textarea>
+
+                <div class="composer-actions composer-actions--right">
+                  <button class="icon-btn" id="btn-gif" type="button" title="GIF">
+                    <span class="gif-btn-label" aria-hidden="true">GIF</span>
+                  </button>
+
+                  <button class="icon-btn" id="btn-voice" type="button" title="Voice message" hidden>
+                    <span class="voice-btn-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 1 0 6 0V6a3 3 0 0 0-3-3Z" fill="currentColor"/><path d="M7 11a5 5 0 0 0 10 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M9 20h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+                  </button>
+
+                  <button class="icon-btn" id="btn-emoji" type="button" title="Emoji">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                      <path d="M8.2 14.2c.9 1.2 2.2 1.9 3.8 1.9s2.9-.7 3.8-1.9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="9.2" cy="10" r="1.2" fill="currentColor"/>
+                      <circle cx="14.8" cy="10" r="1.2" fill="currentColor"/>
+                    </svg>
+                  </button>
+
+                  <button class="icon-btn" id="btn-members" type="button" title="Members">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+                      <path d="M16 19v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      <circle cx="10" cy="8" r="3" stroke="currentColor" stroke-width="2"/>
+                      <path d="M20 19v-1a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M15 5.13a3 3 0 0 1 0 5.74" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+
+                  <button class="btn primary" id="btn-send" type="button" aria-label="Send message" title="Send message"><span class="composer-send-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3.75 11.85 19.5 4.75 14.3 19.25 10.95 13.55 3.75 11.85Z" fill="currentColor"/><path d="M10.95 13.55 19.5 4.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+                </div>
+
+                <input id="file-input" type="file" multiple hidden />
+              </div>
+
+              <div class="emoji-popover" id="emoji-popover" hidden>
+                <div class="emoji-popover-inner">
+                  <emoji-picker id="emoji-picker"></emoji-picker>
+                </div>
+              </div>
+
+              <div class="gif-popover" id="gif-popover" hidden>
+                <div class="gif-popover-inner">
+                  <div class="gif-head">
+                    <input class="gif-search" id="gif-search" placeholder="Search Tenor GIFs" />
+                  </div>
+                  <div class="gif-grid scrollbar-chatlike" id="gif-grid"></div>
+                </div>
+              </div>
+
+              <div class="voice-popover" id="voice-popover" hidden>
+                <div class="voice-popover-inner">
+                  <div class="voice-head">
+                    <div class="voice-title">Record Voice Message</div>
+                  </div>
+                  <div class="voice-body">
+                    <div class="voice-actions-row">
+                      <button class="voice-btn" id="btn-voice-start" type="button">Start recording</button>
+                      <button class="voice-btn secondary" id="btn-voice-upload" type="button">Upload File</button>
+                      <button class="voice-btn ghost" id="btn-voice-stop" type="button" hidden>Stop</button>
+                      <button class="voice-btn ghost" id="btn-voice-pause" type="button" hidden>Pause</button>
+                      <button class="voice-btn ghost" id="btn-voice-clear" type="button" hidden>Clear</button>
+                    </div>
+
+                    <div class="voice-preview-label">Preview</div>
+                    <div class="voice-preview-card">
+                      <div class="voice-preview-top">
+                        <div class="voice-preview-left">
+                          <div class="voice-preview-dot" aria-hidden="true"></div>
+                          <div class="voice-preview-time" id="voice-preview-time">0:00</div>
+                        </div>
+                        <div class="voice-preview-status" id="voice-state-text">Ready to record</div>
+                      </div>
+                      <audio class="voice-preview-audio" id="voice-preview-audio" controls playsinline preload="metadata" hidden></audio>
+                    </div>
+
+                    <div class="voice-foot">
+                      <span>Up to 3 voice messages per message.</span>
+                      <span>Sent as audio files.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+          </section>
+
+          <aside class="sidebar members-sidebar bg-host" id="members-sidebar" hidden>
+            <div class="side-scroll scrollbar-chatlike">
+              <div class="online-pill" id="online-pill" hidden>
+                <div class="room-summary" id="room-summary" hidden>
+                  <div class="room-label" id="room-label">Room - —</div>
+                  <div class="room-icon-stack">
+                    <button class="room-icon-button" id="room-icon-button" type="button" aria-label="Change room icon">
+                      <img class="room-icon-image" id="room-icon-image" alt="Room icon" draggable="false" />
+                      <div class="room-icon-overlay" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+                          <path d="M21 15v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                          <path d="M7 10 12 5l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M12 5v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                  <input id="room-icon-input" type="file" accept="image/png,image/jpeg,image/jpg,image/gif" hidden />
+                </div>
+                <div class="online-label" id="online-label">Members - 0</div>
+                <div class="online-list" id="online-list" aria-label="Members list"></div>
+              </div>
+              <div id="members-sidebar-mount"></div>
+            </div>
+          </aside>
+
+          <aside class="sidebar bg-host">
+            <div class="side-scroll scrollbar-chatlike" id="side-scroll">
+              <nav class="sidebar-nav" aria-label="Sidebar">
+                <button class="side-btn" id="btn-side-home" type="button" aria-label="Home">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M3 10.8 12 3l9 7.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M5.2 9.7V21h13.6V9.7" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+                      <path d="M9.2 21v-6.2h5.6V21" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Home</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-settings" type="button" aria-label="Settings">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" stroke-width="2"/>
+                      <path d="M19.4 13.4c.08-.46.12-.93.12-1.4s-.04-.94-.12-1.4l2.05-1.6-2-3.46-2.56 1.03a8.1 8.1 0 0 0-2.42-1.4L14.08 2h-4.16l-.39 3.17a8.1 8.1 0 0 0-2.42 1.4L4.55 5.54l-2 3.46 2.05 1.6c-.08.46-.12.93-.12 1.4s.04.94.12 1.4L2.55 15l2 3.46 2.56-1.03a8.1 8.1 0 0 0 2.42 1.4l.39 3.17h4.16l.39-3.17a8.1 8.1 0 0 0 2.42-1.4l2.56 1.03 2-3.46-2.05-1.6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Settings</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-call" type="button" aria-label="Call" hidden data-call-state="none">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg class="call-ico call-ico-default" viewBox="0 0 24 24" fill="none">
+                      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.1 19.1 0 0 1-5.9-5.9A19.8 19.8 0 0 1 2.1 4.3 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.45 2.1L8.1 9.6a16 16 0 0 0 6.3 6.3l1.2-1.2a2 2 0 0 1 2.1-.45c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                    <svg class="call-ico call-ico-in" viewBox="0 0 24 24" fill="none">
+                      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.1 19.1 0 0 1-5.9-5.9A19.8 19.8 0 0 1 2.1 4.3 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.45 2.1L8.1 9.6a16 16 0 0 0 6.3 6.3l1.2-1.2a2 2 0 0 1 2.1-.45c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <rect x="16.6" y="4.8" width="6.2" height="9.4" rx="1.4" stroke="currentColor" stroke-width="2"/>
+                      <path d="M18.4 7.1h2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label" id="call-label">Start Call</span>
+                </button>
+
+                <button class="side-btn rooms-add" id="btn-room-plus" type="button" aria-label="Create or join room">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Rooms</span>
+                </button>
+              </nav>
+
+              <section class="rooms-block side-section" id="rooms-list-card" aria-label="Rooms List">
+                <div class="rooms-head" id="rooms-head">
+                  <div class="rooms-title" id="rooms-title">Rooms List</div>
+                  <div class="rooms-mini" id="rooms-mini">0</div>
+                </div>
+                <div class="rooms-list" id="rooms-list"></div>
+              </section>
+
+              <nav class="sidebar-nav" aria-label="Tools">
+                <button class="side-btn side-menu-btn" id="btn-side-slideshow" type="button" aria-label="Slideshow">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <rect x="4" y="5" width="16" height="11" rx="2" stroke="currentColor" stroke-width="2"/>
+                      <path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M8 9h8M8 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Slideshow</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-schedules" type="button" aria-label="Schedules">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M3 10.5 12 5l9 5.5-9 5.5-9-5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <path d="M6.5 13v4.2c1.6 1.2 3.4 1.8 5.5 1.8s3.9-.6 5.5-1.8V13" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <path d="M21 10.5v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Schedules</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-games" type="button" aria-label="HTML Library" data-mode="library">
+                  <span class="side-ico" id="btn-side-games-icon" aria-hidden="true">
+                    <span class="html-side-glyph">&lt;/&gt;</span>
+                  </span>
+                  <span class="side-label">HTML Library</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-notepad" type="button" aria-label="Notepad">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M7 3h9l4 4v14H7a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <path d="M15 3v5h5M8 12h8M8 16h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Notepad</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-maps" type="button" aria-label="Maps">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 21s6-5.3 6-11a6 6 0 0 0-12 0c0 5.7 6 11 6 11Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+                      <circle cx="12" cy="10" r="2.2" stroke="currentColor" stroke-width="2.2"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Maps</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-camera" type="button" aria-label="Camera">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M8.5 6.5 10 4h4l1.5 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h3.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <circle cx="12" cy="13" r="3.5" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Camera</span>
+                </button>
+
+                <button class="side-btn side-menu-btn" id="btn-side-panel" type="button" aria-label="Admin Tools" hidden>
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                      <path d="M12 12.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z" stroke="currentColor" stroke-width="2"/>
+                      <path d="M7.8 18.2c.9-2 2.5-3.2 4.2-3.2s3.3 1.2 4.2 3.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Admin Tools</span>
+                </button>
+
+                <button class="side-btn" id="btn-clock-set" type="button" aria-label="Timer">
+                  <span class="side-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="13" r="8" stroke="currentColor" stroke-width="2"/>
+                      <path d="M9 2h6M12 5V3M12 13V9M12 13l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </span>
+                  <span class="side-label">Timer</span>
+                </button>
+              </nav>
+
+              <button class="rooms-block side-section time-display-card" id="btn-time-display" type="button" aria-label="Open Time Display">
+                <div class="rooms-head">
+                  <div class="rooms-title">Time Display</div>
+                </div>
+                <div class="clock-body">
+                  <div class="clock-time" id="clock-time">—</div>
+                  <div class="muted small" id="clock-class" hidden>Class: None</div>
+                  <div class="muted small" id="clock-timer">No timer set.</div>
+                </div>
+              </button>
+
+              <section class="me-pill me-pill-dock" aria-label="Account">
+                <div class="mini-avatar" id="me-avatar"></div>
+                <div class="me-meta">
+                  <div class="me-name" id="me-name">—</div>
+                  <div class="me-code" id="me-code">—</div>
+                </div>
+              </section>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast" hidden>
+    <div class="toast-inner">
+      <div class="toast-left">
+        <div class="toast-title" id="toast-title">Notice</div>
+        <div class="toast-body" id="toast-body"></div>
+        <div class="toast-code" id="toast-code" hidden></div>
+      </div>
+      <div class="toast-right">
+        <button class="btn tiny" id="btn-copy-code" type="button" hidden>Copy</button>
+        <button class="icon-btn" id="btn-toast-close" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="toast-timer">
+        <div class="toast-timer-bar" id="toast-timer-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-subtitle">
+      <div class="modal-main">
+        <header class="modal-head">
+          <div class="modal-heading">
+            <div class="modal-title" id="modal-title">Modal</div>
+            <div class="modal-subtitle" id="modal-subtitle"></div>
+          </div>
+          <button class="modal-close" id="btn-modal-close" type="button" aria-label="Close dialog">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.35" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </header>
+
+        <div class="modal-body" id="modal-body"></div>
+        <footer class="modal-actions" id="modal-actions" hidden></footer>
+      </div>
+    </section>
+  </div>
+  
+  <div class="user-profile-popover" id="user-profile-popover" hidden>
+    <div class="user-profile-card" id="user-profile-card"></div>
+  </div>
+
+  <!-- Firebase bootstrap: retry Firebase loads until they succeed, then load app.js only after Firebase is ready -->
+  <script>
+    (() => {
+      "use strict";
+
+      const FIREBASE_APP_URL = "https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js";
+      const FIREBASE_DB_URL = "https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js";
+      const APP_JS_URL = "https://cdn.jsdelivr.net/gh/dowsy456/christianlumen727@main/app.js";
+      const RETRY_DELAY_MS = 1000;
+
+      function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function removeScript(src) {
+        document.querySelectorAll(`script[src="${src}"]`).forEach((el) => {
+          try { el.remove(); } catch {}
+        });
+      }
+
+      function loadScriptOnce(src, { crossOrigin = null } = {}) {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = src;
+          script.async = false;
+          if (crossOrigin) script.crossOrigin = crossOrigin;
+
+          script.addEventListener("load", () => resolve(), { once: true });
+          script.addEventListener("error", () => {
+            try { script.remove(); } catch {}
+            reject(new Error(`Failed to load script: ${src}`));
+          }, { once: true });
+
+          document.head.appendChild(script);
+        });
+      }
+
+      async function loadScriptUntilWorks(src, options) {
+        for (;;) {
+          try {
+            await loadScriptOnce(src, options);
+            return;
+          } catch (error) {
+            console.warn(error);
+            await delay(RETRY_DELAY_MS);
+          }
+        }
+      }
+
+      async function boot() {
+        if (!globalThis.firebase?.initializeApp || !globalThis.firebase?.database) {
+          removeScript(FIREBASE_APP_URL);
+          removeScript(FIREBASE_DB_URL);
+
+          await loadScriptUntilWorks(FIREBASE_APP_URL, { crossOrigin: "anonymous" });
+          await loadScriptUntilWorks(FIREBASE_DB_URL, { crossOrigin: "anonymous" });
+        }
+
+        while (!globalThis.firebase?.initializeApp || !globalThis.firebase?.database) {
+          removeScript(FIREBASE_APP_URL);
+          removeScript(FIREBASE_DB_URL);
+
+          await delay(RETRY_DELAY_MS);
+          await loadScriptUntilWorks(FIREBASE_APP_URL, { crossOrigin: "anonymous" });
+          await loadScriptUntilWorks(FIREBASE_DB_URL, { crossOrigin: "anonymous" });
+        }
+
+        await loadScriptOnce(APP_JS_URL);
+      }
+
+      boot().catch((error) => {
+        console.error(error);
+      });
+    })();
+  </script>
+</body>
+</html>
